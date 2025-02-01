@@ -1,12 +1,16 @@
 const net = require("net");
 const fs = require("fs");
 const os = require("os");
+require("dotenv").config();
 
-// Konfigurace
+
 const PORT = process.env.PORT || 65525;
-const DATA_FILE = "bank_data.json";
+const BANK_IP = process.env.BANK_IP || getIPAddress();
 
-// Načtení dat
+const DATA_FILE = "bank_data.json";
+const TIMEOUT = process.env.Timeout ? parseInt(process.env.Timeout, 10) : 5000;
+
+
 let bankData = loadBankData();
 
 function loadBankData() {
@@ -20,11 +24,12 @@ function saveBankData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(bankData, null, 2));
 }
 
-// TCP server
+
 const server = net.createServer((socket) => {
   socket.setEncoding("utf-8");
+  socket.setTimeout(TIMEOUT);
 
-  let buffer = ""; // Uchováváme přijatá data, než přijde celý řádek
+  let buffer = ""; 
 
   socket.on("data", (data) => {
     buffer += data;
@@ -35,11 +40,16 @@ const server = net.createServer((socket) => {
     lines.forEach((line) => handleCommand(line.trim(), socket));
   });
 
-  socket.on("error", (err) => console.error("🚨 Chyba socketu:", err.message));
-  socket.on("end", () => console.log("🔌 Klient odpojen"));
+  socket.on("error", (err) => console.error("🚨 Socket Error:", err.message));
+  socket.on("end", () => console.log("🔌 Client dissconected"));
+  socket.on("timeout", () => {
+    console.log("⚠ Timeout.");
+    socket.write("ER Timeout got timedout  hahah.\n");
+    socket.end();
+  });
+
 });
 
-// Zpracování příkazů
 function handleCommand(command, socket) {
   if (!command) return;
 
@@ -49,7 +59,7 @@ function handleCommand(command, socket) {
 
   switch (cmd.toUpperCase()) {
     case "BC":
-      socket.write(`BC ${getIPAddress()}\n`);
+      socket.write(`BC ${BANK_IP()}\n`);
       break;
     case "AC":
       createAccount(socket);
@@ -77,7 +87,6 @@ function handleCommand(command, socket) {
   }
 }
 
-// Pomocné funkce
 function getIPAddress() {
   const interfaces = os.networkInterfaces();
   for (const name in interfaces) {
@@ -98,7 +107,7 @@ function createAccount(socket) {
   const accountId = generateUniqueAccountId();
   bankData.accounts[accountId] = 0;
   saveBankData();
-  socket.write(`AC ${accountId}/${getIPAddress()}\n`);
+  socket.write(`AC ${accountId}/${BANK_IP()}\n`);
 }
 
 function generateUniqueAccountId() {
@@ -178,7 +187,7 @@ function checkBalance(socket, args) {
     return;
   }
 
-  socket.write(`AB ${bankData.accounts[account]}\n`);
+  socket.write(`AB 💸${bankData.accounts[account]}💸\n`);
 }
 
 function removeAccount(socket, args) {
@@ -214,10 +223,6 @@ function bankNumberOfClients(socket) {
 }
 
 function isValidAccount(account, bankCode) {
-  return (
-    bankData.accounts.hasOwnProperty(account) && bankCode === getIPAddress()
-  );
+  return (bankData.accounts.hasOwnProperty(account) && bankCode === BANK_IP );
 }
-
-// Spuštění serveru
 server.listen(PORT, () => console.log(`🏦 Server běží na portu ${PORT}`));
