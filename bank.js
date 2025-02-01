@@ -59,7 +59,7 @@ function handleCommand(command, socket) {
 
   switch (cmd.toUpperCase()) {
     case "BC":
-      socket.write(`BC ${BANK_IP()}\n`);
+      socket.write(`BC ${BANK_IP}\n`);
       break;
     case "AC":
       createAccount(socket);
@@ -107,7 +107,7 @@ function createAccount(socket) {
   const accountId = generateUniqueAccountId();
   bankData.accounts[accountId] = 0;
   saveBankData();
-  socket.write(`AC ${accountId}/${BANK_IP()}\n`);
+  socket.write(`AC ${accountId}/${BANK_IP}\n`);
 }
 
 function generateUniqueAccountId() {
