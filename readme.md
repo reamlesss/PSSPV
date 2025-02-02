@@ -19,7 +19,7 @@ It follows a **TCP/IP server-client architecture**, where commands are sent as *
 
 ### **1️⃣ Prerequisites**
 
-- **Node.js** (latest LTS version recommended)
+- **Node.js**
 - **Putty or Telnet**
 
 ### **2️⃣ Install Dependencies**
