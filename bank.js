@@ -118,6 +118,34 @@ function generateUniqueAccountId() {
   return accountId;
 }
 
+
+function forwardCommandToBank(bankIP, command, socket) {
+  const client = new net.Socket();
+  client.setEncoding("utf-8");
+
+  client.connect(PORT, bankIP, () => {
+    console.log(`🔗 Připojeno k bance ${bankIP}`);
+    client.write(command + "\n");
+  });
+
+  client.on("data", (data) => {
+    console.log(`📨 Odpověď od banky ${bankIP}: ${data.trim()}`);
+    socket.write(data);
+    client.end();
+  });
+
+  client.on("error", (err) => {
+    console.error(`🚨 Chyba při komunikaci s bankou ${bankIP}: ${err.message}`);
+    socket.write("ER Nepodařilo se kontaktovat jinou banku.\n");
+    client.destroy();
+  });
+
+  client.on("close", () => {
+    console.log(`🔌 Spojení s bankou ${bankIP} uzavřeno.`);
+  });
+}
+
+
 function deposit(socket, args) {
   if (args.length !== 2) {
     socket.write(
@@ -130,10 +158,18 @@ function deposit(socket, args) {
   const [account, bankCode] = accountInfo.split("/");
   const amount = parseInt(amountStr, 10);
 
-  if (!isValidAccount(account, bankCode) || isNaN(amount) || amount <= 0) {
-    socket.write(
-      "ER číslo bankovního účtu a částka není ve správném formátu.\n"
-    );
+  if (isNaN(amount) || amount <= 0) {
+    socket.write("ER Částka musí být kladné číslo.\n");
+    return;
+  }
+
+  if (bankCode !== BANK_IP) {
+    forwardCommandToBank(bankCode, `AD ${accountInfo} ${amount}`, socket);
+    return;
+  }
+
+  if (!bankData.accounts.hasOwnProperty(account)) {
+    socket.write("ER Neexistující účet.\n");
     return;
   }
 
@@ -142,7 +178,6 @@ function deposit(socket, args) {
   saveBankData();
   socket.write(`AD\n`);
 }
-
 function withdraw(socket, args) {
   if (args.length !== 2) {
     socket.write(
@@ -155,10 +190,18 @@ function withdraw(socket, args) {
   const [account, bankCode] = accountInfo.split("/");
   const amount = parseInt(amountStr, 10);
 
-  if (!isValidAccount(account, bankCode) || isNaN(amount) || amount <= 0) {
-    socket.write(
-      "ER číslo bankovního účtu a částka není ve správném formátu.\n"
-    );
+  if (isNaN(amount) || amount <= 0) {
+    socket.write("ER Částka musí být kladné číslo.\n");
+    return;
+  }
+
+  if (bankCode !== BANK_IP) {
+    forwardCommandToBank(bankCode, `AW ${accountInfo} ${amount}`, socket);
+    return;
+  }
+
+  if (!bankData.accounts.hasOwnProperty(account)) {
+    socket.write("ER Neexistující účet.\n");
     return;
   }
 
@@ -173,6 +216,7 @@ function withdraw(socket, args) {
   socket.write(`AW\n`);
 }
 
+
 function checkBalance(socket, args) {
   if (args.length !== 1) {
     socket.write("ER Formát čísla účtu není správný.\n");
@@ -182,8 +226,13 @@ function checkBalance(socket, args) {
   const [accountInfo] = args;
   const [account, bankCode] = accountInfo.split("/");
 
-  if (!isValidAccount(account, bankCode)) {
-    socket.write("ER Formát čísla účtu není správný.\n");
+  if (bankCode !== BANK_IP) {
+    forwardCommandToBank(bankCode, `AB ${accountInfo}`, socket);
+    return;
+  }
+
+  if (!bankData.accounts.hasOwnProperty(account)) {
+    socket.write("ER Neexistující účet.\n");
     return;
   }
 
