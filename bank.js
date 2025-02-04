@@ -1,18 +1,29 @@
+/**
+ * Module dependencies.
+ */
 const net = require("net");
 const fs = require("fs");
 const os = require("os");
 require("dotenv").config();
 
-
+/**
+ * Constants
+ */
 const PORT = process.env.PORT || 65525;
-const BANK_IP = process.env.BANK_IP || getIPAddress();
-
+const BANK_IP = getIPAddress(); 
 const DATA_FILE = "bank_data.json";
 const TIMEOUT = process.env.Timeout ? parseInt(process.env.Timeout, 10) : 5000;
 
 
+/**
+ * Load initial bank data
+ */
 let bankData = loadBankData();
 
+/**
+ * Load bank data from file
+ * @returns {Object} Bank data
+ */
 function loadBankData() {
   if (fs.existsSync(DATA_FILE)) {
     return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
@@ -20,11 +31,16 @@ function loadBankData() {
   return { accounts: {}, totalAmount: 0 };
 }
 
+/**
+ * Save bank data to file
+ */
 function saveBankData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(bankData, null, 2));
 }
 
-
+/**
+ * Create a TCP server
+ */
 const server = net.createServer((socket) => {
   socket.setEncoding("utf-8");
   socket.setTimeout(TIMEOUT);
@@ -41,19 +57,24 @@ const server = net.createServer((socket) => {
   });
 
   socket.on("error", (err) => console.error("🚨 Socket Error:", err.message));
-  socket.on("end", () => console.log("🔌 Client dissconected"));
+  socket.on("end", () => console.log("🔌 Client disconnected"));
   socket.on("timeout", () => {
     console.log("⚠ Timeout.");
-    socket.write("ER Timeout got timedout  hahah.\n");
+    socket.write("ER Timeout occurred.\n");
     socket.end();
   });
 
 });
 
+/**
+ * Handle incoming commands
+ * @param {string} command - The command received
+ * @param {net.Socket} socket - The socket connection
+ */
 function handleCommand(command, socket) {
   if (!command) return;
 
-  console.log("📩 Příkaz přijat:", JSON.stringify(command));
+  console.log("📩 Command received:", JSON.stringify(command));
 
   const [cmd, ...args] = command.trim().split(/\s+/);
 
@@ -87,6 +108,10 @@ function handleCommand(command, socket) {
   }
 }
 
+/**
+ * Get the IP address of the current machine
+ * @returns {string} IP address
+ */
 function getIPAddress() {
   const interfaces = os.networkInterfaces();
   for (const name in interfaces) {
@@ -96,12 +121,16 @@ function getIPAddress() {
       }
     }
   }
-  return "127.0.0.1"; // Pokud není dostupná veřejná IP
+  return "127.0.0.1"; // If no public IP is available
 }
 
+/**
+ * Create a new bank account
+ * @param {net.Socket} socket - The socket connection
+ */
 function createAccount(socket) {
   if (Object.keys(bankData.accounts).length >= 90000) {
-    socket.write("ER Naše banka nyní neumožňuje založení nového účtu.\n");
+    socket.write("ER Our bank currently does not allow the creation of new accounts.\n");
     return;
   }
   const accountId = generateUniqueAccountId();
@@ -110,6 +139,10 @@ function createAccount(socket) {
   socket.write(`AC ${accountId}/${BANK_IP}\n`);
 }
 
+/**
+ * Generate a unique account ID
+ * @returns {number} Account ID
+ */
 function generateUniqueAccountId() {
   let accountId;
   do {
@@ -118,38 +151,47 @@ function generateUniqueAccountId() {
   return accountId;
 }
 
-
+/**
+ * Forward command to another bank
+ * @param {string} bankIP - The IP address of the other bank
+ * @param {string} command - The command to forward
+ * @param {net.Socket} socket - The socket connection
+ */
 function forwardCommandToBank(bankIP, command, socket) {
   const client = new net.Socket();
   client.setEncoding("utf-8");
 
   client.connect(PORT, bankIP, () => {
-    console.log(`🔗 Připojeno k bance ${bankIP}`);
+    console.log(`🔗 Connected to bank ${bankIP}`);
     client.write(command + "\n");
   });
 
   client.on("data", (data) => {
-    console.log(`📨 Odpověď od banky ${bankIP}: ${data.trim()}`);
+    console.log(`📨 Response from bank ${bankIP}: ${data.trim()}`);
     socket.write(data);
     client.end();
   });
 
   client.on("error", (err) => {
-    console.error(`🚨 Chyba při komunikaci s bankou ${bankIP}: ${err.message}`);
-    socket.write("ER Nepodařilo se kontaktovat jinou banku.\n");
+    console.error(`🚨 Error communicating with bank ${bankIP}: ${err.message}`);
+    socket.write("ER Failed to contact another bank.\n");
     client.destroy();
   });
 
   client.on("close", () => {
-    console.log(`🔌 Spojení s bankou ${bankIP} uzavřeno.`);
+    console.log(`🔌 Connection to bank ${bankIP} closed.`);
   });
 }
 
-
+/**
+ * Deposit money into an account
+ * @param {net.Socket} socket - The socket connection
+ * @param {Array} args - The command arguments
+ */
 function deposit(socket, args) {
   if (args.length !== 2) {
     socket.write(
-      "ER číslo bankovního účtu a částka není ve správném formátu.\n"
+      "ER The bank account number and amount are not in the correct format.\n"
     );
     return;
   }
@@ -159,7 +201,7 @@ function deposit(socket, args) {
   const amount = parseInt(amountStr, 10);
 
   if (isNaN(amount) || amount <= 0) {
-    socket.write("ER Částka musí být kladné číslo.\n");
+    socket.write("ER The amount must be a positive number.\n");
     return;
   }
 
@@ -169,7 +211,7 @@ function deposit(socket, args) {
   }
 
   if (!bankData.accounts.hasOwnProperty(account)) {
-    socket.write("ER Neexistující účet.\n");
+    socket.write("ER Non-existent account.\n");
     return;
   }
 
@@ -178,10 +220,16 @@ function deposit(socket, args) {
   saveBankData();
   socket.write(`AD\n`);
 }
+
+/**
+ * Withdraw money from an account
+ * @param {net.Socket} socket - The socket connection
+ * @param {Array} args - The command arguments
+ */
 function withdraw(socket, args) {
   if (args.length !== 2) {
     socket.write(
-      "ER číslo bankovního účtu a částka není ve správném formátu.\n"
+      "ER The bank account number and amount are not in the correct format.\n"
     );
     return;
   }
@@ -191,7 +239,7 @@ function withdraw(socket, args) {
   const amount = parseInt(amountStr, 10);
 
   if (isNaN(amount) || amount <= 0) {
-    socket.write("ER Částka musí být kladné číslo.\n");
+    socket.write("ER The amount must be a positive number.\n");
     return;
   }
 
@@ -201,12 +249,12 @@ function withdraw(socket, args) {
   }
 
   if (!bankData.accounts.hasOwnProperty(account)) {
-    socket.write("ER Neexistující účet.\n");
+    socket.write("ER Non-existent account.\n");
     return;
   }
 
   if (bankData.accounts[account] < amount) {
-    socket.write("ER Není dostatek finančních prostředků.\n");
+    socket.write("ER Insufficient funds.\n");
     return;
   }
 
@@ -216,10 +264,14 @@ function withdraw(socket, args) {
   socket.write(`AW\n`);
 }
 
-
+/**
+ * Check the balance of an account
+ * @param {net.Socket} socket - The socket connection
+ * @param {Array} args - The command arguments
+ */
 function checkBalance(socket, args) {
   if (args.length !== 1) {
-    socket.write("ER Formát čísla účtu není správný.\n");
+    socket.write("ER The account number format is incorrect.\n");
     return;
   }
 
@@ -232,16 +284,21 @@ function checkBalance(socket, args) {
   }
 
   if (!bankData.accounts.hasOwnProperty(account)) {
-    socket.write("ER Neexistující účet.\n");
+    socket.write("ER Non-existent account.\n");
     return;
   }
 
   socket.write(`AB 💸${bankData.accounts[account]}💸\n`);
 }
 
+/**
+ * Remove a bank account
+ * @param {net.Socket} socket - The socket connection
+ * @param {Array} args - The command arguments
+ */
 function removeAccount(socket, args) {
   if (args.length !== 1) {
-    socket.write("ER Formát čísla účtu není správný.\n");
+    socket.write("ER The account number format is incorrect.\n");
     return;
   }
 
@@ -249,12 +306,12 @@ function removeAccount(socket, args) {
   const [account, bankCode] = accountInfo.split("/");
 
   if (!isValidAccount(account, bankCode)) {
-    socket.write("ER Formát čísla účtu není správný.\n");
+    socket.write("ER The account number format is incorrect.\n");
     return;
   }
 
   if (bankData.accounts[account] > 0) {
-    socket.write("ER Nelze smazat bankovní účet na kterém jsou finance.\n");
+    socket.write("ER Cannot delete an account with funds.\n");
     return;
   }
 
@@ -263,15 +320,33 @@ function removeAccount(socket, args) {
   socket.write(`AR\n`);
 }
 
+/**
+ * Get the total amount of money in the bank
+ * @param {net.Socket} socket - The socket connection
+ */
 function bankTotalAmount(socket) {
   socket.write(`BA ${bankData.totalAmount}\n`);
 }
 
+/**
+ * Get the number of clients in the bank
+ * @param {net.Socket} socket - The socket connection
+ */
 function bankNumberOfClients(socket) {
   socket.write(`BN ${Object.keys(bankData.accounts).length}\n`);
 }
 
+/**
+ * Validate if the account is valid
+ * @param {string} account - The account number
+ * @param {string} bankCode - The bank code
+ * @returns {boolean} True if valid, false otherwise
+ */
 function isValidAccount(account, bankCode) {
   return (bankData.accounts.hasOwnProperty(account) && bankCode === BANK_IP );
 }
-server.listen(PORT, () => console.log(`🏦 Server běží na portu ${PORT}`));
+
+/**
+ * Start the server
+ */
+server.listen(PORT, () => console.log(`🏦 Server running on port ${PORT}`));
