@@ -2,41 +2,48 @@
  * Module dependencies.
  */
 const net = require("net");
-const fs = require("fs");
+const mysql = require("mysql");
 const os = require("os");
+const fs = require('fs');
 require("dotenv").config();
 
 /**
  * Constants
  */
 const PORT = process.env.PORT || 65525;
-const BANK_IP = getIPAddress(); 
-const DATA_FILE = "bank_data.json";
+const BANK_IP = getIPAddress(); // Use only getIPAddress function
 const TIMEOUT = process.env.Timeout ? parseInt(process.env.Timeout, 10) : 5000;
 
+/**
+ * MySQL connection
+ */
+const connection = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: 'password',
+  database: 'bank'
+});
+
+const logStream = fs.createWriteStream('bank.log', { flags: 'a' });
 
 /**
- * Load initial bank data
+ * Log messages to bank.log
+ * @param {string} message - The message to log
  */
-let bankData = loadBankData();
+function log(message) {
+  const timestamp = new Date().toISOString();
+  logStream.write(`[${timestamp}] ${message}\n`);
+}
 
-/**
- * Load bank data from file
- * @returns {Object} Bank data
- */
-function loadBankData() {
-  if (fs.existsSync(DATA_FILE)) {
-    return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+connection.connect((err) => {
+  if (err) {
+    console.error('Error connecting to MySQL:', err.stack);
+    log(`Error connecting to MySQL: ${err.stack}`);
+    return;
   }
-  return { accounts: {}, totalAmount: 0 };
-}
-
-/**
- * Save bank data to file
- */
-function saveBankData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(bankData, null, 2));
-}
+  console.log('Connected to MySQL as id ' + connection.threadId);
+  log('Connected to MySQL as id ' + connection.threadId);
+});
 
 /**
  * Create a TCP server
@@ -56,10 +63,17 @@ const server = net.createServer((socket) => {
     lines.forEach((line) => handleCommand(line.trim(), socket));
   });
 
-  socket.on("error", (err) => console.error("🚨 Socket Error:", err.message));
-  socket.on("end", () => console.log("🔌 Client disconnected"));
+  socket.on("error", (err) => {
+    console.error("🚨 Socket Error:", err.message);
+    log(`Socket Error: ${err.message}`);
+  });
+  socket.on("end", () => {
+    console.log("🔌 Client disconnected");
+    log("Client disconnected");
+  });
   socket.on("timeout", () => {
     console.log("⚠ Timeout.");
+    log("Timeout occurred");
     socket.write("ER Timeout occurred.\n");
     socket.end();
   });
@@ -75,6 +89,7 @@ function handleCommand(command, socket) {
   if (!command) return;
 
   console.log("📩 Command received:", JSON.stringify(command));
+  log(`Command received: ${JSON.stringify(command)}`);
 
   const [cmd, ...args] = command.trim().split(/\s+/);
 
@@ -129,14 +144,27 @@ function getIPAddress() {
  * @param {net.Socket} socket - The socket connection
  */
 function createAccount(socket) {
-  if (Object.keys(bankData.accounts).length >= 90000) {
-    socket.write("ER Our bank currently does not allow the creation of new accounts.\n");
-    return;
-  }
-  const accountId = generateUniqueAccountId();
-  bankData.accounts[accountId] = 0;
-  saveBankData();
-  socket.write(`AC ${accountId}/${BANK_IP}\n`);
+  connection.query('SELECT COUNT(*) AS count FROM accounts', (error, results) => {
+    if (error) {
+      log(`Error querying account count: ${error.message}`);
+      throw error;
+    }
+
+    if (results[0].count >= 90000) {
+      socket.write("ER Our bank currently does not allow the creation of new accounts.\n");
+      return;
+    }
+
+    const accountId = generateUniqueAccountId();
+    connection.query('INSERT INTO accounts (id, balance) VALUES (?, 0)', [accountId], (error) => {
+      if (error) {
+        log(`Error creating account ${accountId}: ${error.message}`);
+        throw error;
+      }
+      socket.write(`AC ${accountId}/${BANK_IP}\n`);
+      log(`Account created: ${accountId}`);
+    });
+  });
 }
 
 /**
@@ -147,8 +175,22 @@ function generateUniqueAccountId() {
   let accountId;
   do {
     accountId = Math.floor(10000 + Math.random() * 90000);
-  } while (bankData.accounts[accountId] !== undefined);
+  } while (!isUniqueAccountId(accountId));
   return accountId;
+}
+
+/**
+ * Check if the account ID is unique
+ * @param {number} accountId - The account ID to check
+ * @returns {boolean} True if unique, false otherwise
+ */
+function isUniqueAccountId(accountId) {
+  return new Promise((resolve, reject) => {
+    connection.query('SELECT id FROM accounts WHERE id = ?', [accountId], (error, results) => {
+      if (error) return reject(error);
+      resolve(results.length === 0);
+    });
+  });
 }
 
 /**
@@ -174,6 +216,7 @@ function forwardCommandToBank(bankIP, command, socket) {
 
   client.on("error", (err) => {
     console.error(`🚨 Error communicating with bank ${bankIP}: ${err.message}`);
+    log(`Error communicating with bank ${bankIP}: ${err.message}`);
     socket.write("ER Failed to contact another bank.\n");
     client.destroy();
   });
@@ -210,15 +253,27 @@ function deposit(socket, args) {
     return;
   }
 
-  if (!bankData.accounts.hasOwnProperty(account)) {
-    socket.write("ER Non-existent account.\n");
-    return;
-  }
+  connection.query('SELECT balance FROM accounts WHERE id = ?', [account], (error, results) => {
+    if (error) {
+      log(`Error querying balance for account ${account}: ${error.message}`);
+      throw error;
+    }
 
-  bankData.accounts[account] += amount;
-  bankData.totalAmount += amount;
-  saveBankData();
-  socket.write(`AD\n`);
+    if (results.length === 0) {
+      socket.write("ER Non-existent account.\n");
+      return;
+    }
+
+    const newBalance = results[0].balance + amount;
+    connection.query('UPDATE accounts SET balance = ? WHERE id = ?', [newBalance, account], (error) => {
+      if (error) {
+        log(`Error updating balance for account ${account}: ${error.message}`);
+        throw error;
+      }
+      socket.write(`AD\n`);
+      log(`Deposited ${amount} to account ${account}`);
+    });
+  });
 }
 
 /**
@@ -248,20 +303,32 @@ function withdraw(socket, args) {
     return;
   }
 
-  if (!bankData.accounts.hasOwnProperty(account)) {
-    socket.write("ER Non-existent account.\n");
-    return;
-  }
+  connection.query('SELECT balance FROM accounts WHERE id = ?', [account], (error, results) => {
+    if (error) {
+      log(`Error querying balance for account ${account}: ${error.message}`);
+      throw error;
+    }
 
-  if (bankData.accounts[account] < amount) {
-    socket.write("ER Insufficient funds.\n");
-    return;
-  }
+    if (results.length === 0) {
+      socket.write("ER Non-existent account.\n");
+      return;
+    }
 
-  bankData.accounts[account] -= amount;
-  bankData.totalAmount -= amount;
-  saveBankData();
-  socket.write(`AW\n`);
+    if (results[0].balance < amount) {
+      socket.write("ER Insufficient funds.\n");
+      return;
+    }
+
+    const newBalance = results[0].balance - amount;
+    connection.query('UPDATE accounts SET balance = ? WHERE id = ?', [newBalance, account], (error) => {
+      if (error) {
+        log(`Error updating balance for account ${account}: ${error.message}`);
+        throw error;
+      }
+      socket.write(`AW\n`);
+      log(`Withdrew ${amount} from account ${account}`);
+    });
+  });
 }
 
 /**
@@ -283,12 +350,20 @@ function checkBalance(socket, args) {
     return;
   }
 
-  if (!bankData.accounts.hasOwnProperty(account)) {
-    socket.write("ER Non-existent account.\n");
-    return;
-  }
+  connection.query('SELECT balance FROM accounts WHERE id = ?', [account], (error, results) => {
+    if (error) {
+      log(`Error querying balance for account ${account}: ${error.message}`);
+      throw error;
+    }
 
-  socket.write(`AB 💸${bankData.accounts[account]}💸\n`);
+    if (results.length === 0) {
+      socket.write("ER Non-existent account.\n");
+      return;
+    }
+
+    socket.write(`AB 💸${results[0].balance}💸\n`);
+    log(`Checked balance for account ${account}: ${results[0].balance}`);
+  });
 }
 
 /**
@@ -310,14 +385,31 @@ function removeAccount(socket, args) {
     return;
   }
 
-  if (bankData.accounts[account] > 0) {
-    socket.write("ER Cannot delete an account with funds.\n");
-    return;
-  }
+  connection.query('SELECT balance FROM accounts WHERE id = ?', [account], (error, results) => {
+    if (error) {
+      log(`Error querying balance for account ${account}: ${error.message}`);
+      throw error;
+    }
 
-  delete bankData.accounts[account];
-  saveBankData();
-  socket.write(`AR\n`);
+    if (results.length === 0) {
+      socket.write("ER Non-existent account.\n");
+      return;
+    }
+
+    if (results[0].balance > 0) {
+      socket.write("ER Cannot delete an account with funds.\n");
+      return;
+    }
+
+    connection.query('DELETE FROM accounts WHERE id = ?', [account], (error) => {
+      if (error) {
+        log(`Error deleting account ${account}: ${error.message}`);
+        throw error;
+      }
+      socket.write(`AR\n`);
+      log(`Removed account ${account}`);
+    });
+  });
 }
 
 /**
@@ -325,7 +417,14 @@ function removeAccount(socket, args) {
  * @param {net.Socket} socket - The socket connection
  */
 function bankTotalAmount(socket) {
-  socket.write(`BA ${bankData.totalAmount}\n`);
+  connection.query('SELECT SUM(balance) AS totalAmount FROM accounts', (error, results) => {
+    if (error) {
+      log(`Error querying total amount: ${error.message}`);
+      throw error;
+    }
+    socket.write(`BA ${results[0].totalAmount}\n`);
+    log(`Total amount in bank: ${results[0].totalAmount}`);
+  });
 }
 
 /**
@@ -333,7 +432,14 @@ function bankTotalAmount(socket) {
  * @param {net.Socket} socket - The socket connection
  */
 function bankNumberOfClients(socket) {
-  socket.write(`BN ${Object.keys(bankData.accounts).length}\n`);
+  connection.query('SELECT COUNT(*) AS count FROM accounts', (error, results) => {
+    if (error) {
+      log(`Error querying number of clients: ${error.message}`);
+      throw error;
+    }
+    socket.write(`BN ${results[0].count}\n`);
+    log(`Number of clients in bank: ${results[0].count}`);
+  });
 }
 
 /**
@@ -343,10 +449,18 @@ function bankNumberOfClients(socket) {
  * @returns {boolean} True if valid, false otherwise
  */
 function isValidAccount(account, bankCode) {
-  return (bankData.accounts.hasOwnProperty(account) && bankCode === BANK_IP );
+  return new Promise((resolve, reject) => {
+    connection.query('SELECT id FROM accounts WHERE id = ?', [account], (error, results) => {
+      if (error) return reject(error);
+      resolve(results.length > 0 && bankCode === BANK_IP);
+    });
+  });
 }
 
 /**
  * Start the server
  */
-server.listen(PORT, () => console.log(`🏦 Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`🏦 Server running on port ${PORT}`);
+  log(`Server running on port ${PORT}`);
+});

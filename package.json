@@ -1,5 +1,13 @@
 {
   "dependencies": {
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "mysql": "^2.18.1"
+  },
+  "devDependencies": {
+    "mocha": "^10.2.0",
+    "chai": "^4.3.7"
+  },
+  "scripts": {
+    "test": "mocha"
   }
 }

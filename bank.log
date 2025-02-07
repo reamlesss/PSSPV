@@ -1,0 +1,41 @@
+[INFO] 2025-02-07T20:39:39.099Z - 🏦 Server running on port 65525
+[INFO] 2025-02-07T20:39:39.125Z - Connected to MySQL as id 18
+[INFO] 2025-02-07T20:39:44.633Z - 📩 Command received: "BA"
+[INFO] 2025-02-07T20:39:44.660Z - Total amount in bank: 0
+[INFO] 2025-02-07T20:39:45.994Z - 📩 Command received: "BC"
+[INFO] 2025-02-07T20:39:48.383Z - 📩 Command received: "BN"
+[INFO] 2025-02-07T20:39:48.389Z - Number of clients in bank: 1
+[INFO] 2025-02-07T20:39:53.391Z - ⚠ Timeout.
+[INFO] 2025-02-07T20:39:53.392Z - 🔌 Client disconnected
+[INFO] 2025-02-07T20:46:38.762Z - 🏦 Server running on port 65525
+[ERROR] 2025-02-07T20:46:38.785Z - Error connecting to MySQL: Error: ER_NOT_SUPPORTED_AUTH_MODE: Client does not support authentication protocol requested by server; consider upgrading MySQL client
+    at Sequence._packetToError (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/sequences/Sequence.js:47:14)
+    at Handshake.ErrorPacket (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/sequences/Handshake.js:123:18)
+    at Protocol._parsePacket (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/Protocol.js:291:23)
+    at Parser._parsePacket (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/Parser.js:433:10)
+    at Parser.write (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/Parser.js:43:10)
+    at Protocol.write (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/Protocol.js:38:16)
+    at Socket.<anonymous> (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/Connection.js:88:28)
+    at Socket.<anonymous> (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/Connection.js:526:10)
+    at Socket.emit (node:events:507:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    --------------------
+    at Protocol._enqueue (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/Protocol.js:144:48)
+    at Protocol.handshake (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/protocol/Protocol.js:51:23)
+    at Connection.connect (/Users/vaclavvondracek/Documents/PV/PSSPV/node_modules/mysql/lib/Connection.js:116:18)
+    at Object.<anonymous> (/Users/vaclavvondracek/Documents/PV/PSSPV/src/bank.js:28:12)
+    at Module._compile (node:internal/modules/cjs/loader:1739:14)
+    at Object..js (node:internal/modules/cjs/loader:1904:10)
+    at Module.load (node:internal/modules/cjs/loader:1473:32)
+    at Function._load (node:internal/modules/cjs/loader:1285:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:234:24)
+[2025-02-07T20:57:55.559Z] Server running on port 65525
+[2025-02-07T20:57:55.643Z] Connected to MySQL as id 21
+[2025-02-07T20:58:02.918Z] Command received: "AC"
+[2025-02-07T20:58:02.957Z] Account created: 53953
+[2025-02-07T20:58:06.007Z] Command received: "VN"
+[2025-02-07T20:58:07.263Z] Command received: "BN"
+[2025-02-07T20:58:07.267Z] Number of clients in bank: 3
+[2025-02-07T20:58:12.267Z] Timeout occurred
+[2025-02-07T20:58:12.268Z] Client disconnected
